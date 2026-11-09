@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+build/
+dist/
+saida/
+*.spec
+_build_info.py
+version_info.txt
+autoatack_config.json
+captura_teste.bmp

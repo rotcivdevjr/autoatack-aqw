@@ -1,0 +1,94 @@
+AUTOATACK AQW  v1.0
+===================
+
+PARA QUEM VAI USAR
+  1. Baixe o AutoAtack-AQW-Setup-X.Y.Z.exe na página Releases do GitHub.
+  2. Abra o instalador. Não precisa de Python nem de senha de administrador.
+     Na primeira vez o Windows pode mostrar "O Windows protegeu o seu
+     computador": clique em "Mais informações" e "Executar assim mesmo".
+     (Isso acontece com todo app sem assinatura digital paga.)
+  3. Pronto. Quando sair versão nova, o app avisa ao abrir e se atualiza
+     sozinho. Dá para conferir no link "verificar atualizações" no topo.
+  Configurações ficam em %APPDATA%\AutoAtack AQW (não somem nas atualizações).
+  Se algo der errado, o arquivo erros.log nessa mesma pasta ajuda a descobrir.
+
+CALIBRAGEM POR CLIQUE
+  Barra de vida: clique no início e depois no fim da barra vermelha.
+  Ícones: clique no centro do ícone de cada skill, da 1 até a 5.
+  Esses cliques NÃO chegam ao jogo (não usam a skill). Botão direito ou Esc
+  cancela. O F8 com o mouse em cima do ponto continua funcionando como reserva.
+
+ROTAÇÃO (em cada aba de classe)
+  A ordem da lista é o seu combo. Com tudo pronto, ele sai de cima para baixo
+  (ex.: 4 > 2 > 3 > 5). Depois, nenhuma skill fica sem vez: entre as prontas,
+  vai a que está pronta há mais tempo; se empatar, vale a ordem da lista.
+  Para "bater na 2 e soltar 4 e 5 juntas quando voltarem", ponha 4 > 5 > 2.
+
+PRECISÃO: CALIBRAGEM SALVA POR CLASSE (aba ◎ Precisão)
+  - Calibre uma vez cada classe (5 cliques com as skills PRONTAS). Fica salvo
+    dentro daquela aba de classe.
+  - Trocou de classe no jogo? Só troque a aba da classe no programa: a
+    calibragem dela entra sozinha. O topo da aba Precisão mostra qual é.
+  - Classe nova: equipe-a no jogo, deixe as skills prontas e clique em
+    "Ícones de agora = PRONTOS". Ele reaproveita as posições já marcadas em
+    outra classe, sem precisar dos 5 cliques.
+  - Se a janela do jogo mudar de tamanho, o painel avisa: recalibre.
+  - "Pronta com até (% do ícone escurecido)": padrão 3. Se uma skill pronta
+    aparecer como CD no painel, suba um pouco (4-6).
+  - Se o jogo recusar teclas (recarga global), o programa aumenta sozinho a
+    espera entre teclas; o status mostra "espera aprendida".
+
+TELEPORTE (aba ✈ Teleporte)
+  Salve os mapas que você mais usa. "Ir" faz no jogo: ENTER (abre o chat),
+  digita o comando e ENTER (envia). Escrevendo só o mapa (shadowfallwar), o
+  programa coloca "/join" na frente; um comando com "/" vai do jeito que está.
+  - Durante o envio a rotação pausa, para as teclas 1-5 não caírem no chat.
+  - "Desligar o auto-ataque ao teleportar" (ligado por padrão) desliga a rotação.
+  - Por padrão o jogo vem para a frente por um instante e o foco volta para o
+    programa. "Enviar em 2º plano" não puxa o jogo, mas pode não funcionar.
+  - Se faltarem letras no comando, aumente a "Espera entre ENTER / texto / ENTER".
+
+COMO PUBLICAR (você, o desenvolvedor)
+  Primeira vez:
+    1. Crie um repositório PÚBLICO no GitHub (ex.: autoatack-aqw). Precisa ser
+       público para os apps conseguirem baixar as atualizações sem senha.
+    2. Envie esta pasta inteira para ele (git add . / commit / push).
+    3. Crie e envie a tag da versão:
+         git tag v1.0.0
+         git push origin v1.0.0
+    4. Na aba Actions do repositório, espere o "Publicar versão" ficar verde
+       (uns 5 minutos). Em Releases vai aparecer o instalador e o latest.json.
+       Esse é o link que você manda para as pessoas.
+  Cada atualização:
+    1. Mude o código e escreva o que mudou no NOVIDADES.md (## 1.0.1 ...).
+    2. git commit / push, e depois:  git tag v1.0.1  e  git push origin v1.0.1
+    3. Os apps instalados encontram a versão nova sozinhos ao abrir.
+  Regras: a versão é sempre X.Y.Z e sempre maior que a anterior. Nunca mude o
+  AppId em instalador/autoatack_aqw.iss.
+  Testar antes de publicar: ferramentas\criar_app_local.bat (no seu PC, com
+  Python). O app de teste fica em "dist\AutoAtack AQW" e não se atualiza.
+
+ARQUIVOS
+  autoatack_aqw.py        o programa
+  ui_tema.py              visual: cores, botões, interruptores e sons
+  versao.py               nome e versão do app
+  atualizador.py          busca, baixa e instala as atualizações
+  assets/                 logo, ícone e sons (vão dentro do app)
+  instalador/             script do instalador (Inno Setup)
+  .github/workflows/      publicação automática no GitHub
+  ferramentas/            build local, geradores do build e o diagnóstico
+  extras/sons_originais/  seus .mp3 originais (não vão no app)
+  NOVIDADES.md            notas que aparecem na janela de atualização
+  iniciar.bat             roda direto do código (precisa de Python)
+
+SONS
+  - O interruptor "Sons" no topo liga e desliga todos os sons (fica salvo).
+  - O clique toca nos botões e nas abas.
+  - O som de confirmação toca ao terminar a calibragem da barra de vida e dos ícones.
+  - Para trocar um som, substitua o .wav em assets\sons mantendo o mesmo nome.
+    (O clique original tinha 0,27 s de silêncio no começo; foi cortado para
+    o som sair na hora. Os .mp3 originais estão em extras\sons_originais.)
+
+LOGO
+  Para trocar a logo, substitua assets/logo_72.png (tela) e assets/icone.ico
+  (janela, atalho e instalador), mantendo os mesmos nomes.

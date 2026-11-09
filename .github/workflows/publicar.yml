@@ -1,0 +1,62 @@
+# Publica uma versão nova do AutoAtack AQW.
+# Para lançar: atualize o NOVIDADES.md, crie a tag (ex.: v1.0.1) e envie:
+#   git tag v1.0.1
+#   git push origin v1.0.1
+# O GitHub cria o app, o instalador e o latest.json, e publica tudo em Releases.
+# Os apps instalados encontram a versão nova sozinhos na próxima vez que abrirem.
+name: Publicar versão
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  publicar:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar o PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller==6.11.1
+
+      - name: Gravar versão e repositório no app
+        shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}".TrimStart("v")
+          "VERSAO=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          python ferramentas/gerar_build_info.py --versao $ver --repo "${{ github.repository }}"
+
+      - name: Criar o app
+        run: >
+          python -m PyInstaller --noconfirm --clean --windowed
+          --name "AutoAtack AQW"
+          --icon assets/icone.ico
+          --add-data "assets;assets"
+          --version-file version_info.txt
+          autoatack_aqw.py
+
+      - name: Instalar o Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Criar o instalador
+        shell: pwsh
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:VERSAO" instalador\autoatack_aqw.iss'
+
+      - name: Gerar o latest.json
+        shell: pwsh
+        run: python ferramentas/gerar_latest.py --versao $env:VERSAO --repo "${{ github.repository }}" --instalador "saida/AutoAtack-AQW-Setup-$env:VERSAO.exe" --notas NOVIDADES.md
+
+      - name: Publicar em Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          name: AutoAtack AQW v${{ env.VERSAO }}
+          files: |
+            saida/AutoAtack-AQW-Setup-${{ env.VERSAO }}.exe
+            saida/latest.json

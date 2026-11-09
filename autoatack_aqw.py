@@ -612,6 +612,34 @@ def brilho_regiao(regiao, captura):
     return (sum(dados[0::4]) + sum(dados[1::4]) + sum(dados[2::4])) / (3.0 * n)
 
 
+def alvo_na_tela(regiao, captura, minimo_vermelho):
+    """
+    True se o painel do ALVO (mob/boss) está aberto e com vida. Esse painel só aparece no topo
+    do jogo quando há algo selecionado, e some quando o alvo morre.
+    Exige duas coisas, para o fundo do mapa (ex.: uma lua vermelha) não enganar:
+      1) vermelho na barra de vida do alvo;
+      2) a barra AZUL de mana logo abaixo dela.
+    None = não deu para ler (janela minimizada etc.).
+    """
+    hp = ler_vida_percent(regiao, minimo_vermelho, captura)
+    if hp is None:
+        return None
+    if hp <= 0:
+        return False
+    x1, y1, x2, y2 = regiao
+    yc = (y1 + y2) // 2
+    colunas = max(8, (x2 - x1) // 8)
+    abaixo = captura.regiao((x1, yc + 4, x1 + colunas - 1, yc + 45))
+    if not abaixo:
+        return None
+    azuis = 0
+    for i in range(0, len(abaixo), 4):
+        b, g, r = abaixo[i], abaixo[i + 1], abaixo[i + 2]
+        if b >= 110 and b > r * 1.8 and b >= g * 1.2:
+            azuis += 1
+    return azuis >= colunas
+
+
 def cinza_regiao(regiao, captura):
     """Tons de cinza (0-255) de cada pixel da região, como bytes. None se não deu para ler."""
     dados = captura.regiao(regiao)
@@ -880,6 +908,15 @@ class AutoAtack(tk.Tk):
         self.tp_parar = tk.BooleanVar(value=True)
         self.tp_passo = tk.StringVar(value="150")
 
+        # só atacar com alvo (o painel do mob/boss aparece no topo do jogo)
+        self.regiao_alvo = None     # barra de vida do ALVO, relativa à janela do jogo
+        self.alvo_janela = None     # tamanho da janela quando foi marcada
+        self.alvo_agora = None      # True / False / None (lido no _tick)
+        self.sem_alvo = False       # o motor está esperando um alvo
+        self.so_alvo = tk.BooleanVar(value=False)
+        self.alvo_procura = tk.StringVar(value="2")
+        self.alvo_tecla = tk.StringVar(value="1")
+
         self.perfis = []
         self.perfil_ativo = None
         self.cfg = {}
@@ -953,6 +990,16 @@ class AutoAtack(tk.Tk):
         self.tp_bg.set(bool(tpo.get("bg", False)))
         self.tp_parar.set(bool(tpo.get("parar", True)))
         self.tp_passo.set(str(tpo.get("passo", "150")))
+        al = d.get("alvo", {}) if isinstance(d.get("alvo"), dict) else {}
+        self.so_alvo.set(bool(al.get("ativo", False)))
+        self.alvo_procura.set(str(al.get("procura", "2")))
+        self.alvo_tecla.set(str(al.get("tecla", "1")))
+        try:
+            if al.get("regiao") and al.get("janela"):
+                self.regiao_alvo = tuple(int(v) for v in al["regiao"])
+                self.alvo_janela = tuple(int(v) for v in al["janela"])
+        except Exception:
+            self.regiao_alvo = self.alvo_janela = None
         self.hotkey_vk = d.get("hotkey_vk", self.hotkey_vk)
         self.hotkey_nome = d.get("hotkey_nome", self.hotkey_nome)
         self.sons_var.set(bool(d.get("sons", True)))
@@ -974,6 +1021,10 @@ class AutoAtack(tk.Tk):
                          "foco": self.foco_var.get()},
             "perfis": [p.exportar() for p in self.perfis],
             "teleportes": self.teleportes,
+            "alvo": {"ativo": self.so_alvo.get(), "procura": self.alvo_procura.get(),
+                     "tecla": self.alvo_tecla.get(),
+                     "regiao": list(self.regiao_alvo) if self.regiao_alvo else None,
+                     "janela": list(self.alvo_janela) if self.alvo_janela else None},
             "teleporte": {"bg": self.tp_bg.get(), "parar": self.tp_parar.get(),
                           "passo": self.tp_passo.get()},
             "perfil_selecionado": idx,
@@ -1129,7 +1180,31 @@ class AutoAtack(tk.Tk):
                                   wraplength=450, justify="center")
         self.lbl_barra.pack(padx=10)
         self.lbl_hp = tk.Label(f, text="Vida lida: --", bg=BG, fg=TEXT, font=(FONTE, 12, "bold"))
-        self.lbl_hp.pack(pady=(2, 8))
+        self.lbl_hp.pack(pady=(2, 4))
+
+        # ----- só atacar com alvo -----
+        titulo(f, "ALVO (MOB / BOSS)").pack(anchor="w", padx=12, pady=(4, 3))
+        al = Cartao(f)
+        al.pack(fill="x", padx=10, pady=(0, 8))
+        caixa_marcar(al, "Só atacar quando houver alvo na tela", self.so_alvo, bg=SURFACE,
+                     font=(FONTE, 10, "bold")).pack(anchor="w", padx=12, pady=(8, 2))
+        l1 = tk.Frame(al, bg=SURFACE)
+        l1.pack(fill="x", padx=12, pady=2)
+        self.btn_alvo = botao(l1, "Selecionar barra do alvo", self.selecionar_alvo,
+                              estilo="secundario", altura=30)
+        self.btn_alvo.pack(side="left", fill="x", expand=True)
+        self.lbl_alvo = tk.Label(l1, text="Alvo: --", bg=SURFACE, fg=MUTED, width=18,
+                                 font=(FONTE, 10, "bold"))
+        self.lbl_alvo.pack(side="left", padx=(8, 0))
+        l2 = tk.Frame(al, bg=SURFACE)
+        l2.pack(fill="x", padx=12, pady=(2, 8))
+        tk.Label(l2, text="Sem alvo: apertar a tecla", bg=SURFACE, fg=MUTED,
+                 font=(FONTE, 9)).pack(side="left")
+        ttk.Combobox(l2, textvariable=self.alvo_tecla, state="readonly", width=3,
+                     values=["1", "2", "3", "4", "5"]).pack(side="left", padx=6)
+        tk.Label(l2, text="a cada (s, 0 = nunca)", bg=SURFACE, fg=MUTED,
+                 font=(FONTE, 9)).pack(side="left")
+        campo(l2, self.alvo_procura, 5).pack(side="right", ipady=1)
 
     def _montar_aba_precisao(self):
         f = self.aba_precisao
@@ -1470,10 +1545,28 @@ class AutoAtack(tk.Tk):
         self.calib_modo = None
         self.calib_pontos = []
         self.btn_barra.config(text="Selecionar barra de vida")
+        self.btn_alvo.config(text="Selecionar barra do alvo")
         self.btn_icones.config(text="Calibrar ícones desta classe (5 cliques)")
         self.gancho.desligar()
         self._atualizar_label_barra()
         self._atualizar_label_icones()
+
+    def selecionar_alvo(self):
+        if self.calib_etapa != 0:
+            self._cancelar_calib()
+            return
+        if self._exigir_janela() is None:
+            return
+        self.calib_modo = "alvo"
+        self.calib_etapa = 1
+        self.calib_pontos = []
+        self._f8_pressionada = True
+        self._ligar_gancho(self._hwnd_alvo())
+        self.btn_alvo.config(text="Cancelar")
+        self.lbl_barra.config(
+            text="ALVO 1/2: selecione um mob no jogo (o painel dele aparece no topo) e CLIQUE no "
+                 "INÍCIO (esquerda) da barra VERMELHA dele. Botão direito ou Esc cancela.",
+            fg=RED_HOVER)
 
     def selecionar_barra(self):
         if self.calib_etapa != 0:  # clicar de novo cancela
@@ -1599,12 +1692,15 @@ class AutoAtack(tk.Tk):
         user32.GetWindowRect(hwnd, ctypes.byref(r))
         pos = (pos[0] - r.l, pos[1] - r.t)
 
-        if self.calib_modo == "barra":
+        if self.calib_modo in ("barra", "alvo"):
+            alvo = self.calib_modo == "alvo"
             if self.calib_etapa == 1:
                 self.calib_pontos = [pos]
                 self.calib_etapa = 2
                 self.lbl_barra.config(
-                    text="PASSO 2/2: agora CLIQUE no FIM (direita) da barra.", fg=RED_HOVER)
+                    text=("ALVO 2/2: agora CLIQUE no FIM (direita) da barra vermelha do alvo."
+                          if alvo else "PASSO 2/2: agora CLIQUE no FIM (direita) da barra."),
+                    fg=RED_HOVER)
                 return
             p1, p2 = self.calib_pontos[0], pos
             x1, x2 = sorted((p1[0], p2[0]))
@@ -1613,9 +1709,21 @@ class AutoAtack(tk.Tk):
             if x2 - x1 < 20:
                 self.lbl_barra.config(text="Seleção muito pequena. Tente de novo.", fg=RED_HOVER)
                 return
-            self.regiao_vida = (x1, y - 3, x2, y + 3)
-            self._atualizar_label_barra()
-            SOM.confirmar()  # barra de vida configurada
+            if alvo:
+                self.regiao_alvo = (x1, y - 3, x2, y + 3)
+                self._atualizar_captura()
+                self.alvo_janela = (self.captura.w, self.captura.h)
+                self._salvar_config()
+                if alvo_na_tela(self.regiao_alvo, self.captura, 100):
+                    self.lbl_barra.config(text="Barra do alvo marcada e salva.", fg=TEXT)
+                else:
+                    self.lbl_barra.config(
+                        text="Barra marcada, mas não reconheci o painel do alvo agora. Confira se "
+                             "havia um mob selecionado e use a imagem de teste.", fg=RED_HOVER)
+            else:
+                self.regiao_vida = (x1, y - 3, x2, y + 3)
+                self._atualizar_label_barra()
+            SOM.confirmar()  # barra configurada
             return
 
         if self.calib_modo == "icones":
@@ -1686,6 +1794,8 @@ class AutoAtack(tk.Tk):
         regs = list(self.icones or [])
         if self.regiao_vida:
             regs.append(self.regiao_vida)
+        if self.regiao_alvo:
+            regs.append(self.regiao_alvo)
         caminho = os.path.join(PASTA_DADOS, "captura_teste.bmp")
         try:
             salvar_bmp(caminho, w, h, dados, regs)
@@ -1712,6 +1822,14 @@ class AutoAtack(tk.Tk):
             if g is not None and len(g) == len(pre["base"][idx]):
                 res[idx] = fracao_escura(g, pre["base"][idx])
         return res
+
+    def _ler_alvo(self, minimo):
+        """True/False = alvo sim/não. None = sem como ler (aí o motor ataca como antes)."""
+        if not self.regiao_alvo or not self.captura.valida:
+            return None
+        if self.alvo_janela and (self.captura.w, self.captura.h) != self.alvo_janela:
+            return None
+        return alvo_na_tela(self.regiao_alvo, self.captura, minimo)
 
     def _log(self, texto):
         self.log.append(f"{time.strftime('%H:%M:%S')}  {texto}")
@@ -1751,6 +1869,9 @@ class AutoAtack(tk.Tk):
             "cura_pct": self._num(self.cura_pct, 50, 1, 99),
             "cura_retry": self._num(self.cura_retry, 600, 100, 60000) / 1000,
             "cura_min": int(self._num(self.cura_min, 100, 30, 255)),
+            "so_alvo": self.so_alvo.get(),
+            "alvo_procura": self._num(self.alvo_procura, 2, 0, 60),
+            "alvo_tecla": int(self.alvo_tecla.get() or 1) - 1,
             "tela_ativa": self.tela_ativa.get(),
             "tol": self._num(self.tela_tol, 3, 1, 40) / 100,
             "gap_tela": self._num(self.tela_gap, 120, 30, 5000) / 1000,
@@ -1808,10 +1929,23 @@ class AutoAtack(tk.Tk):
             texto_tp, cor_tp = self._tp_msg
             self._tp_msg = None
             self.lbl_tp.config(text=texto_tp, fg=cor_tp)
+        if self.calib_etapa == 0 and c:
+            if not self.regiao_alvo:
+                self.lbl_alvo.config(text="Alvo: não marcado", fg=MUTED)
+            else:
+                if not self.ligado:
+                    self.alvo_agora = self._ler_alvo(c["cura_min"])
+                if self.alvo_agora is None:
+                    self.lbl_alvo.config(text="Alvo: sem leitura", fg=MUTED)
+                elif self.alvo_agora:
+                    self.lbl_alvo.config(text="Alvo: DETECTADO", fg=RED_HOVER)
+                else:
+                    self.lbl_alvo.config(text="Alvo: nenhum", fg=TEXT)
         if self.teleportando:
             self.lbl_status.config(text="● TELEPORTANDO...", fg=RED_HOVER)
         elif self.ligado and c:
-            texto = "● CURANDO!" if self.precisa_curar else "● LIGADO"
+            texto = ("● CURANDO!" if self.precisa_curar
+                     else "● AGUARDANDO ALVO" if self.sem_alvo else "● LIGADO")
             texto += f"  •  {c['perfil_nome']}"
             if self.ultima_skill:
                 texto += f"  •  última skill: {self.ultima_skill}"
@@ -1959,6 +2093,9 @@ class AutoAtack(tk.Tk):
         gap_extra = 0.0
         hp = None
         aviso_captura = aviso_tamanho = aviso_parado = False
+        ultima_procura = -1e9
+        tinha_alvo = True
+        aviso_alvo = False
 
         while self.ligado and self._geracao == geracao:
             # teleporte em andamento (ou acabou agora): não aperta nada
@@ -2066,6 +2203,39 @@ class AutoAtack(tk.Tk):
             else:
                 self.precisa_curar = False
 
+            # ---------- só atacar com alvo ----------
+            if c["so_alvo"] and self.regiao_alvo:
+                if not (quer_tela or (c["cura_ativa"] and self.regiao_vida)):
+                    self._atualizar_captura(0.02)
+                tem_alvo = self._ler_alvo(c["cura_min"])
+                self.alvo_agora = tem_alvo
+                if tem_alvo is None:
+                    if not aviso_alvo:
+                        aviso_alvo = True
+                        self._log("Não consigo ver o painel do alvo (janela minimizada ou mudou "
+                                  "de tamanho): atacando normalmente")
+                    tem_alvo = True
+                else:
+                    aviso_alvo = False
+                if not tem_alvo:
+                    if tinha_alvo:
+                        self._log("Sem alvo: rotação pausada")
+                    tinha_alvo = False
+                    self.sem_alvo = True
+                    # de tempos em tempos aperta uma tecla para o jogo pegar o mob mais próximo
+                    if (c["alvo_procura"] > 0 and agora >= prox_acao and pend is None
+                            and agora - ultima_procura >= c["alvo_procura"]):
+                        self._pressionar(hwnd, c["alvo_tecla"])
+                        ultima_procura = time.monotonic()
+                        prox_acao = ultima_procura + 0.3
+                    time.sleep(0.03)
+                    continue
+                if not tinha_alvo:
+                    self._log("Alvo encontrado: combo do começo")
+                    passou = {}  # o combo recomeça na ordem da lista
+                tinha_alvo = True
+            self.sem_alvo = False
+
             # ---------- rotação ----------
             if agora >= prox_acao and pend is None and ordem:
                 prontas = [s for s in ordem
@@ -2100,6 +2270,7 @@ class AutoAtack(tk.Tk):
             time.sleep(0.015)
 
         self.precisa_curar = False
+        self.sem_alvo = False
 
     # ---------- atualizações ----------
     def _checar_atualizacao(self, manual=False):
